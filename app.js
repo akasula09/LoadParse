@@ -3,11 +3,21 @@
 
    Production path:  POST /api/parse  -> serverless function -> Groq API
                       (see /api/parse.js). Keeps the Groq key server-side.
+                      The prompt there is built to handle raw, messy,
+                      unstructured shipping text in any format.
 
    This static demo has no deployed backend, so if /api/parse isn't
    reachable, LoadParse falls back to a local heuristic parser so the
-   two-panel workflow is still fully demonstrable offline. The engine
-   status pill tells you honestly which mode you're in.
+   two-panel workflow is still fully demonstrable offline. The heuristic
+   parser is intentionally generic — it scans the whole document for
+   location/date/rate patterns rather than expecting a fixed layout — but
+   it will never match the LLM backend's ability to read truly arbitrary
+   text. The status pill tells you honestly which mode you're in.
+
+   File support: PDFs and spreadsheets (.xlsx/.xls/.csv) never touch the
+   Groq backend directly — text is extracted from them right in the
+   browser (pdf.js for PDFs, SheetJS for spreadsheets) and the extracted
+   text is fed through the exact same pipeline as pasted text.
    ========================================================================== */
 
 const els = {
@@ -21,20 +31,23 @@ const els = {
   toast: document.getElementById('toast'),
   statusPill: document.getElementById('engine-status'),
   statusText: document.getElementById('engine-status-text'),
+  uploadZone: document.getElementById('upload-zone'),
+  fileInput: document.getElementById('file-input'),
+  uploadStatus: document.getElementById('upload-status'),
 };
 
 let engineMode = 'checking'; // 'live' | 'demo'
 let lastParsed = null;
 
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
 /* ---------------------------- engine status ---------------------------- */
 async function checkEngine(){
   try{
     const res = await fetch('/api/parse', { method: 'OPTIONS' });
-    if(res.ok || res.status === 405 || res.status === 204){
-      engineMode = 'live';
-    } else {
-      engineMode = 'demo';
-    }
+    engineMode = (res.ok || res.status === 405 || res.status === 204) ? 'live' : 'demo';
   } catch(e){
     engineMode = 'demo';
   }
@@ -65,10 +78,10 @@ RATE: $1,850.00 flat rate
 TRAILER: #5521
 NOTES: BOL required, appointment delivery, no lumper fee`,
 
-  messy: `pu springfield IL 62701 8/25 0800-1000
-del columbus oh 43004 8/26 1400-1600
-rate 1850 flat trl#5521
-bol req'd appt del no lumper!!
+  messy: `hey need this covered asap!! pu is springfield IL 62701 tmrw 8/25 0800-1000
+drop in columbus oh 43004 next day 8/26 by 4pm
+paying 1850 all in trl#5521
+bol req'd appt del no lumper!! po# 88213
 call dispatch if detention >2hrs`,
 
   conflict: `PICKUP: Phoenix, AZ 85003 — Sep 3, 2026, 07:00-09:00
@@ -76,6 +89,13 @@ DELIVERY: Las Vegas, NV 89101 — Sep 1, 2026, 11:00-13:00
 RATE: $975.00 flat
 TRAILER: #2290
 NOTES: drop trailer, no touch freight`,
+
+  multistop: `STOP 1 - PICKUP: Memphis, TN 38103, Aug 20, 2026
+STOP 2 - PICKUP: Little Rock, AR 72201, Aug 20, 2026
+STOP 3 - DELIVERY: Tulsa, OK 74103, Aug 21, 2026
+STOP 4 - DELIVERY: Oklahoma City, OK 73102, Aug 22, 2026
+Rate: $2,400 flat, load# 55219, reefer set at 34F
+Notes: two pickups, two drops, driver assist required`,
 };
 
 document.querySelectorAll('[data-sample]').forEach(btn => {
@@ -83,6 +103,7 @@ document.querySelectorAll('[data-sample]').forEach(btn => {
     els.input.value = SAMPLES[btn.dataset.sample];
     els.input.dispatchEvent(new Event('input'));
     els.input.focus();
+    setUploadStatus('', '');
   });
 });
 
@@ -104,11 +125,112 @@ function copyText(text, label){
   });
 }
 
+/* =============================================================================
+   FILE UPLOAD + TEXT EXTRACTION
+   PDF -> pdf.js text layer extraction
+   XLSX/XLS/CSV -> SheetJS, every sheet flattened to CSV text
+   TXT -> read as plain text
+   ============================================================================= */
+
+function setUploadStatus(msg, kind){
+  els.uploadStatus.textContent = msg;
+  els.uploadStatus.className = 'upload-status' + (kind ? ' ' + kind : '');
+}
+
+['dragenter', 'dragover'].forEach(evt => {
+  els.uploadZone.addEventListener(evt, e => {
+    e.preventDefault();
+    els.uploadZone.classList.add('dragover');
+  });
+});
+['dragleave', 'drop'].forEach(evt => {
+  els.uploadZone.addEventListener(evt, e => {
+    e.preventDefault();
+    els.uploadZone.classList.remove('dragover');
+  });
+});
+els.uploadZone.addEventListener('drop', e => {
+  const file = e.dataTransfer.files?.[0];
+  if(file) handleFile(file);
+});
+els.uploadZone.addEventListener('click', () => els.fileInput.click());
+els.uploadZone.addEventListener('keydown', e => {
+  if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); els.fileInput.click(); }
+});
+els.fileInput.addEventListener('change', () => {
+  const file = els.fileInput.files?.[0];
+  if(file) handleFile(file);
+  els.fileInput.value = '';
+});
+
+async function handleFile(file){
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const supported = ['pdf', 'xlsx', 'xls', 'csv', 'txt'];
+  if(!supported.includes(ext)){
+    setUploadStatus(`Unsupported file type ".${ext}" — use PDF, Excel, CSV, or .txt.`, 'err');
+    return;
+  }
+
+  els.uploadZone.classList.add('busy');
+  setUploadStatus(`Extracting text from ${file.name}…`, 'busy');
+
+  try{
+    let text;
+    if(ext === 'pdf') text = await extractPdfText(file);
+    else if(ext === 'xlsx' || ext === 'xls' || ext === 'csv') text = await extractSpreadsheetText(file);
+    else text = await file.text();
+
+    text = (text || '').trim();
+
+    if(!text){
+      setUploadStatus(`No readable text found in ${file.name}. If it's a scanned/image-only PDF, try pasting the details manually.`, 'err');
+    } else {
+      els.input.value = text;
+      els.input.dispatchEvent(new Event('input'));
+      setUploadStatus(`Extracted ${text.length.toLocaleString()} characters from ${file.name}. Review below, then parse.`, 'ok');
+    }
+  } catch(err){
+    console.error(err);
+    setUploadStatus(`Couldn't read ${file.name}: ${err.message || 'unknown error'}.`, 'err');
+  } finally {
+    els.uploadZone.classList.remove('busy');
+  }
+}
+
+async function extractPdfText(file){
+  if(!window.pdfjsLib) throw new Error('PDF engine failed to load');
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = '';
+  for(let i = 1; i <= pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(it => it.str).join(' ');
+    text += pageText + '\n';
+  }
+  return text;
+}
+
+async function extractSpreadsheetText(file){
+  if(!window.XLSX) throw new Error('Spreadsheet engine failed to load');
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: 'array' });
+  let text = '';
+  wb.SheetNames.forEach(name => {
+    const sheet = wb.Sheets[name];
+    const csv = XLSX.utils.sheet_to_csv(sheet).trim();
+    if(csv){
+      text += (wb.SheetNames.length > 1 ? `--- Sheet: ${name} ---\n` : '') + csv + '\n\n';
+    }
+  });
+  return text;
+}
+
 /* ------------------------------- parse flow ------------------------------- */
 els.parseBtn.addEventListener('click', async () => {
   const text = els.input.value.trim();
   if(!text){
-    showToast('Paste a load sheet first');
+    showToast('Paste or upload a load sheet first');
     return;
   }
 
@@ -144,9 +266,14 @@ els.parseBtn.addEventListener('click', async () => {
 
 /* ---------------------------------------------------------------------------
    Demo-mode local parser.
-   Heuristic extraction so the UI is fully demonstrable without a deployed
-   Groq backend. The production /api/parse function replaces this with a
-   real llama-3.3-70b-versatile call (see api/parse.js).
+   Heuristic, format-agnostic extraction so the UI is demonstrable without a
+   deployed Groq backend. It scans the *whole* document for stop-like
+   patterns (location + date, wherever they appear and in whatever wording),
+   builds an ordered list of stops rather than assuming exactly one pickup
+   and one delivery, and pulls rate/trailer/reference/cargo details from
+   anywhere in the text. This is intentionally loose — the production
+   /api/parse function replaces this with a real llama-3.3-70b-versatile
+   call that reads arbitrary raw text far more reliably (see api/parse.js).
    ------------------------------------------------------------------------- */
 function demoParse(raw){
   return new Promise(resolve => {
@@ -154,75 +281,120 @@ function demoParse(raw){
       const text = raw.replace(/\r/g, '');
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-      const cityStateZip = /([A-Za-z .]+?),?\s+([A-Za-z]{2})\s+(\d{5})/;
-      const rateMatch = text.match(/\$?\s?([\d,]{2,7}(?:\.\d{2})?)\s*(flat|per\s?mile|\/mi)?/i);
-      const trailerMatch = text.match(/(?:trl|trailer)\s?#?\s?(\w+)/i);
+      const cityStateZip = /([A-Za-z][A-Za-z .'-]{1,30}?),?\s+([A-Za-z]{2})\s+(\d{5})(?:-\d{4})?/;
+      const seenTypes = [];
+      const stops = [];
 
-      const pickupLine = lines.find(l => /\bpu\b|pickup/i.test(l)) || lines[0] || '';
-      const deliveryLine = lines.find(l => /\bdel\b|delivery/i.test(l)) || lines[1] || '';
+      lines.forEach(line => {
+        const loc = line.match(cityStateZip);
+        if(!loc) return;
+        const type = inferStopType(line, seenTypes);
+        seenTypes.push(type);
+        const date = extractDate(line, text);
+        stops.push({
+          type,
+          location: `${titleCase(loc[1])}, ${loc[2].toUpperCase()} ${loc[3]}`,
+          dateDisplay: date ? date.display : 'Not detected',
+          sortable: date ? date.sortable : null,
+        });
+      });
 
-      const pickupLoc = pickupLine.match(cityStateZip);
-      const deliveryLoc = deliveryLine.match(cityStateZip);
+      // Rate — first plausible currency-like number, avoiding zip/date collisions
+      const rateMatch = text.match(/\$\s?([\d,]{2,7}(?:\.\d{2})?)|(?:\b|^)rate[:\s]+\$?\s?([\d,]{2,7}(?:\.\d{2})?)/i);
+      const rateTypeMatch = text.match(/(flat|all[\s-]?in|per\s?mile|\/\s?mi\b|cwt)/i);
+      const trailerMatch = text.match(/(?:trl|trailer)\s?#?\s?:?\s?(\w{2,10})/i);
 
-      const pickupDate = extractDate(pickupLine, text);
-      const deliveryDate = extractDate(deliveryLine, text, pickupDate ? 1 : 0);
+      // References
+      const loadNumMatch = text.match(/\b(?:load|order)\s?#?\s?:?\s?(\w{3,14})/i);
+      const poMatch = text.match(/\bpo\s?#?\s?:?\s?(\w{3,14})/i);
+      const bolMatch = text.match(/\bbol\s?#?\s?:?\s?(\w{3,14})/i);
 
-      const notesLine = lines.find(l => /bol|lumper|appt|appointment|detention|drop|no touch/i.test(l)) || '';
+      // Cargo
+      const weightMatch = text.match(/([\d,]{3,7})\s?(?:lbs?\.?|pounds)/i);
+      const commodityMatch = text.match(/commodity[:\s]+([A-Za-z0-9 ,\/&-]{2,40})/i);
+      const tempMatch = text.match(/(?:reefer|temp)[^\d\n]{0,12}(-?\d{1,3}\s?°?\s?[fF])/i);
 
-      const conflict = pickupDate && deliveryDate && deliveryDate.sortable < pickupDate.sortable;
+      const notesLine = lines.find(l => /bol|lumper|appt|appointment|detention|drop trailer|hook|live load|live unload|tonu|layover|fuel surcharge|no touch|driver assist|reefer|dry van|flatbed|seal/i.test(l));
+
+      // Chronology guardrail: flag the first pair of stops out of order
+      let warning = null;
+      for(let i = 0; i < stops.length && !warning; i++){
+        for(let j = i + 1; j < stops.length && !warning; j++){
+          if(stops[i].sortable != null && stops[j].sortable != null && stops[j].sortable < stops[i].sortable){
+            warning = `${stops[j].type} at ${stops[j].location} (${stops[j].dateDisplay}) falls before ${stops[i].type} at ${stops[i].location} (${stops[i].dateDisplay}). This load can't run in the order listed — confirm with the broker before dispatching.`;
+          }
+        }
+      }
 
       resolve({
-        pickup: {
-          location: pickupLoc ? `${titleCase(pickupLoc[1])}, ${pickupLoc[2].toUpperCase()} ${pickupLoc[3]}` : 'Not detected — check source text',
-          date: pickupDate ? pickupDate.display : 'Not detected',
-        },
-        delivery: {
-          location: deliveryLoc ? `${titleCase(deliveryLoc[1])}, ${deliveryLoc[2].toUpperCase()} ${deliveryLoc[3]}` : 'Not detected — check source text',
-          date: deliveryDate ? deliveryDate.display : 'Not detected',
-        },
+        stops: stops.length ? stops.map(s => ({ type: s.type, location: s.location, date: s.dateDisplay })) : [
+          { type: 'Pickup', location: 'Not detected — check source text', date: 'Not detected' },
+          { type: 'Delivery', location: 'Not detected — check source text', date: 'Not detected' },
+        ],
         financial: {
-          rate: rateMatch ? `$${Number(rateMatch[1].replace(/,/g,'')).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}${rateMatch[2] ? ' ' + rateMatch[2].replace('per?mile','per mile') : ' flat'}` : 'Not detected',
+          rate: rateMatch
+            ? `$${Number((rateMatch[1] || rateMatch[2]).replace(/,/g, '')).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${rateTypeMatch ? ' ' + rateTypeMatch[1].replace(/\s?-?\/\s?mi\b/i, 'per mile') : ' flat'}`
+            : 'Not detected',
           trailer: trailerMatch ? `#${trailerMatch[1]}` : 'Not detected',
         },
+        cargo: (weightMatch || commodityMatch || tempMatch) ? {
+          weight: weightMatch ? `${weightMatch[1]} lbs` : null,
+          commodity: commodityMatch ? titleCase(commodityMatch[1].trim()) : null,
+          temperature: tempMatch ? tempMatch[1].replace(/\s?°?\s?f/i, '°F') : null,
+        } : null,
+        references: (loadNumMatch || poMatch || bolMatch) ? {
+          load_number: loadNumMatch ? loadNumMatch[1] : null,
+          po_number: poMatch ? poMatch[1] : null,
+          bol_number: bolMatch ? bolMatch[1] : null,
+        } : null,
         notes: notesLine || 'No special instructions detected',
-        warning: conflict
-          ? `Delivery date (${deliveryDate.display}) falls before the pickup date (${pickupDate.display}). This load cannot be run as written — confirm with the broker before dispatching.`
-          : null,
+        warning,
       });
     }, 900 + Math.random() * 500);
   });
+}
+
+function inferStopType(line, seenTypes){
+  if(/\b(pu|pickup|origin|shipper|loading|load at|stop\s*\d*\s*-?\s*pickup)\b/i.test(line)) return 'Pickup';
+  if(/\b(del|delivery|consignee|destination|drop|unload|deliver to|stop\s*\d*\s*-?\s*delivery)\b/i.test(line)) return 'Delivery';
+  if(!seenTypes.includes('Pickup')) return 'Pickup';
+  if(!seenTypes.includes('Delivery')) return 'Delivery';
+  return 'Stop';
 }
 
 function titleCase(str){
   return str.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 }
 
-// Very small date heuristic covering "8/25", "Aug 25, 2026", "Aug 25" formats.
-// Assumes current year when no year is given — good enough for a demo parser.
-function extractDate(line, fullText, fallbackIndex){
+// Small date heuristic covering "8/25", "Aug 25, 2026", "Aug 25", "08-25-26".
+// Assumes current year when none is given — good enough for a demo parser.
+function extractDate(line, fullText){
   const monthNames = 'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec';
   const source = line || fullText;
   let m = source.match(new RegExp(`(${monthNames})[a-z]*\\.?\\s+(\\d{1,2})(?:,?\\s+(\\d{4}))?`, 'i'));
   if(m){
-    const monthIdx = monthNames.split('|').indexOf(m[1].toLowerCase().slice(0,3));
+    const monthIdx = monthNames.split('|').indexOf(m[1].toLowerCase().slice(0, 3));
     const day = parseInt(m[2], 10);
     const year = m[3] ? parseInt(m[3], 10) : new Date().getFullYear();
     const d = new Date(year, monthIdx, day);
     return { display: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), sortable: d.getTime() };
   }
-  m = source.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+  m = source.match(/(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/);
   if(m){
-    const month = parseInt(m[1],10) - 1;
-    const day = parseInt(m[2],10);
-    const year = m[3] ? (m[3].length === 2 ? 2000+parseInt(m[3],10) : parseInt(m[3],10)) : new Date().getFullYear();
+    const month = parseInt(m[1], 10) - 1;
+    const day = parseInt(m[2], 10);
+    const year = m[3] ? (m[3].length === 2 ? 2000 + parseInt(m[3], 10) : parseInt(m[3], 10)) : new Date().getFullYear();
     const d = new Date(year, month, day);
-    return { display: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), sortable: d.getTime() };
+    if(!isNaN(d.getTime())) return { display: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), sortable: d.getTime() };
   }
   return null;
 }
 
 /* -------------------------------- render -------------------------------- */
+function val(x){ return (x === null || x === undefined || x === '') ? 'Not detected' : x; }
+
 function renderResult(data){
+  data.financial = data.financial || {};
   els.loading.style.display = 'none';
   els.result.style.display = 'block';
   els.copyAll.style.display = 'inline-flex';
@@ -233,6 +405,34 @@ function renderResult(data){
       <span class="msg"><b>Date conflict flagged.</b> ${escapeHtml(data.warning)}</span>
     </div>` : '';
 
+  const stopsHtml = (data.stops || []).map(stop => {
+    const cls = stop.type === 'Pickup' ? 'pickup' : stop.type === 'Delivery' ? 'delivery' : '';
+    return `
+      <div class="stop ${cls}">
+        <span class="stop-tag">${escapeHtml(stop.type || 'Stop')}</span>
+        <div class="stop-body">
+          <b class="copy-field" data-value="${escapeAttr(stop.location || '')}">${escapeHtml(stop.location || 'Not detected')}</b>
+          <span>${escapeHtml(stop.date || 'Not detected')}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  const cargoHtml = data.cargo ? `
+    <div class="result-section">
+      <h3>Cargo</h3>
+      ${data.cargo.weight ? `<div class="result-row"><span class="rk">Weight</span><span class="rv">${escapeHtml(data.cargo.weight)}</span></div>` : ''}
+      ${data.cargo.commodity ? `<div class="result-row"><span class="rk">Commodity</span><span class="rv">${escapeHtml(data.cargo.commodity)}</span></div>` : ''}
+      ${data.cargo.temperature ? `<div class="result-row"><span class="rk">Reefer temp</span><span class="rv">${escapeHtml(data.cargo.temperature)}</span></div>` : ''}
+    </div>` : '';
+
+  const refsHtml = data.references ? `
+    <div class="result-section">
+      <h3>References</h3>
+      ${data.references.load_number ? `<div class="result-row"><span class="rk">Load #</span><span class="rv copyable copy-field" data-value="${escapeAttr(data.references.load_number)}">${escapeHtml(data.references.load_number)}</span></div>` : ''}
+      ${data.references.po_number ? `<div class="result-row"><span class="rk">PO #</span><span class="rv copyable copy-field" data-value="${escapeAttr(data.references.po_number)}">${escapeHtml(data.references.po_number)}</span></div>` : ''}
+      ${data.references.bol_number ? `<div class="result-row"><span class="rk">BOL #</span><span class="rv copyable copy-field" data-value="${escapeAttr(data.references.bol_number)}">${escapeHtml(data.references.bol_number)}</span></div>` : ''}
+    </div>` : '';
+
   els.result.innerHTML = `
     ${warningHtml}
     <div class="result-card">
@@ -240,33 +440,21 @@ function renderResult(data){
 
       <div class="result-section">
         <h3>Stops</h3>
-        <div class="stops-list">
-          <div class="stop pickup">
-            <span class="stop-tag">Pickup</span>
-            <div class="stop-body">
-              <b class="copy-field" data-value="${escapeAttr(data.pickup.location)}">${escapeHtml(data.pickup.location)}</b>
-              <span>${escapeHtml(data.pickup.date)}</span>
-            </div>
-          </div>
-          <div class="stop delivery">
-            <span class="stop-tag">Delivery</span>
-            <div class="stop-body">
-              <b class="copy-field" data-value="${escapeAttr(data.delivery.location)}">${escapeHtml(data.delivery.location)}</b>
-              <span>${escapeHtml(data.delivery.date)}</span>
-            </div>
-          </div>
-        </div>
+        <div class="stops-list">${stopsHtml}</div>
       </div>
 
       <div class="result-section">
         <h3>Financial</h3>
-        <div class="result-row"><span class="rk">Rate</span><span class="rv copyable copy-field" data-value="${escapeAttr(data.financial.rate)}">${escapeHtml(data.financial.rate)}</span></div>
-        <div class="result-row"><span class="rk">Trailer</span><span class="rv copyable copy-field" data-value="${escapeAttr(data.financial.trailer)}">${escapeHtml(data.financial.trailer)}</span></div>
+        <div class="result-row"><span class="rk">Rate</span><span class="rv copyable copy-field" data-value="${escapeAttr(val(data.financial.rate))}">${escapeHtml(val(data.financial.rate))}</span></div>
+        <div class="result-row"><span class="rk">Trailer</span><span class="rv copyable copy-field" data-value="${escapeAttr(val(data.financial.trailer))}">${escapeHtml(val(data.financial.trailer))}</span></div>
       </div>
+
+      ${cargoHtml}
+      ${refsHtml}
 
       <div class="result-section">
         <h3>Notes</h3>
-        <div class="result-row"><span class="rv" style="font-family:var(--font-body); font-weight:400; text-align:left;">${escapeHtml(data.notes)}</span></div>
+        <div class="result-row"><span class="rv" style="font-family:var(--font-body); font-weight:400; text-align:left;">${escapeHtml(val(data.notes))}</span></div>
       </div>
 
       <div class="result-foot">
@@ -293,14 +481,15 @@ function renderResult(data){
 els.copyAll.addEventListener('click', () => {
   if(!lastParsed) return;
   const d = lastParsed;
-  const text = [
-    `Pickup: ${d.pickup.location} — ${d.pickup.date}`,
-    `Delivery: ${d.delivery.location} — ${d.delivery.date}`,
-    `Rate: ${d.financial.rate}`,
-    `Trailer: ${d.financial.trailer}`,
-    `Notes: ${d.notes}`,
-  ].join('\n');
-  copyText(text, 'full load summary');
+  const lines = (d.stops || []).map(s => `${val(s.type)}: ${val(s.location)} — ${val(s.date)}`);
+  lines.push(`Rate: ${val((d.financial||{}).rate)}`, `Trailer: ${val((d.financial||{}).trailer)}`);
+  if(d.references){
+    if(d.references.load_number) lines.push(`Load #: ${d.references.load_number}`);
+    if(d.references.po_number) lines.push(`PO #: ${d.references.po_number}`);
+    if(d.references.bol_number) lines.push(`BOL #: ${d.references.bol_number}`);
+  }
+  lines.push(`Notes: ${d.notes}`);
+  copyText(lines.join('\n'), 'full load summary');
 });
 
 function escapeHtml(str){
