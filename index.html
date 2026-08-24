@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoadParse — Rate Confirmations to Clean Data, Instantly</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="stripe"></div>
+<header class="topbar">
+  <a href="index.html" class="brand">
+    <span class="mark">LP</span>
+    LoadParse
+    <span class="tag">Dispatch Tools</span>
+  </a>
+  <nav class="nav-links">
+    <a href="index.html#problem">Problem</a>
+    <a href="index.html#solution">Solution</a>
+    <a href="login.html">Log In</a>
+  </nav>
+  <a href="login.html" class="btn btn-primary">Open Dashboard →</a>
+</header>
+
+<section class="hero">
+  <div>
+    <div class="eyebrow">Free · No install · Groq-powered</div>
+    <h1>Turn messy<br>rate cons into<br><span class="hl">clean data.</span></h1>
+    <p class="lede">Paste a chaotic rate confirmation. Get back a verified pickup, delivery, and rate sheet in under two seconds — with impossible dates flagged before they cost you a fine.</p>
+    <div class="hero-cta">
+      <a href="login.html" class="btn btn-primary">Start Parsing Free →</a>
+      <a href="dashboard.html" class="btn btn-ghost">See the Dashboard</a>
+    </div>
+    <div class="hero-note" style="margin-top:18px;">No credit card. No corporate license. No seat limits.</div>
+  </div>
+
+  <div class="doc-stack">
+    <div class="doc-card back">
+      <div class="doc-title"><span>RATE CONFIRMATION #48213</span><span>PDF</span></div>
+      pu: dallas tx 75201 8/24 0700-0900<br>
+      del ATL GA 30303 8/23<br>
+      rate: $2,150 flat — trl #8842<br>
+      bol req'd, appt del, no lumper<br>
+      <br>
+      <span style="color:var(--red);">⚠ chaotic, unreadable at a glance</span>
+    </div>
+    <div class="doc-card front">
+      <div class="doc-title"><span>LOADPARSE OUTPUT</span><span>VERIFIED</span></div>
+      <div class="doc-line"><span>Pickup</span><b>Dallas, TX 75201</b></div>
+      <div class="doc-line"><span>Pickup Date</span><b>Aug 24, 07:00–09:00</b></div>
+      <div class="doc-line"><span>Delivery</span><b>Atlanta, GA 30303</b></div>
+      <div class="doc-line"><span>Delivery Date</span><b>Aug 23</b></div>
+      <div class="doc-line"><span>Rate</span><b>$2,150.00 flat</b></div>
+      <div class="doc-line"><span>Trailer</span><b>#8842</b></div>
+      <div class="stamp">DATE<br>CONFLICT</div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="problem">
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>The problem on every dispatch desk</h2>
+      <span class="band-num">01 / DIAGNOSIS</span>
+    </div>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <span class="num">01</span>
+        <h3>Manual data entry</h3>
+        <p>Dispatchers burn 10–15 minutes per load retyping chaotic addresses, dates, and rates from PDF rate confirmations into a spreadsheet — for every single load, every single day.</p>
+      </div>
+      <div class="problem-card">
+        <span class="num">02</span>
+        <h3>Human error</h3>
+        <p>A transposed zip code or a delivery date that lands before the pickup date isn't a typo — it's a routing fine, a missed appointment, and a call you don't want to make.</p>
+      </div>
+      <div class="problem-card">
+        <span class="num">03</span>
+        <h3>Bloated competitors</h3>
+        <p>Existing TMS and logistics software is expensive, slow to load, and locked behind corporate subscriptions that a solo dispatcher or small brokerage can't justify.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band solution-band" id="solution">
+  <div class="band-inner">
+    <div class="band-head">
+      <h2>How LoadParse fixes it</h2>
+      <span class="band-num">02 / SOLUTION</span>
+    </div>
+    <div class="solution-grid">
+      <div class="solution-card">
+        <div class="icon">01</div>
+        <h3>Zero onboarding friction</h3>
+        <p>A clean, industrial, multi-page site: one login screen, one two-panel dashboard. Nothing else to learn.</p>
+      </div>
+      <div class="solution-card">
+        <div class="icon">02</div>
+        <h3>Instant text parsing</h3>
+        <p>Paste the raw load sheet into the left panel. A serverless backend routes it straight to Groq's <code>llama-3.3-70b-versatile</code>.</p>
+      </div>
+      <div class="solution-card">
+        <div class="icon">03</div>
+        <h3>Smart guardrails</h3>
+        <p>The model flags physical impossibilities — like a delivery date before pickup — with an urgent red warning banner, up top, unmissable.</p>
+      </div>
+      <div class="solution-card">
+        <div class="icon">04</div>
+        <h3>One-click clarity</h3>
+        <p>Pickup, delivery, and financial details land formatted on the right panel, ready to copy straight into your TMS.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-band">
+  <div class="eyebrow" style="justify-content:center;">Ready when you are</div>
+  <h2>Stop retyping rate cons.</h2>
+  <p>Free to use. No account required to try a sample load.</p>
+  <a href="login.html" class="btn btn-primary">Open LoadParse →</a>
+</section>
+
+<footer>
+  <span>LoadParse — built for the dispatch desk</span>
+  <span>Extraction by Groq · llama-3.3-70b-versatile</span>
+</footer>
+
+</body>
+</html>
