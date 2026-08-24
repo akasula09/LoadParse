@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In — LoadParse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="stripe"></div>
+<header class="topbar">
+  <a href="index.html" class="brand">
+    <span class="mark">LP</span>
+    LoadParse
+    <span class="tag">Dispatch Tools</span>
+  </a>
+  <nav class="nav-links">
+    <a href="index.html#problem">Problem</a>
+    <a href="index.html#solution">Solution</a>
+  </nav>
+  <a href="index.html" class="btn btn-ghost">← Back to site</a>
+</header>
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="clip"></div>
+    <div class="login-head">
+      <div class="eyebrow">Dispatch Desk Login</div>
+      <h1>Clock in.</h1>
+      <p>Log in to start parsing load sheets. This is a free demo login — no account is created or verified.</p>
+    </div>
+
+    <div class="demo-note">
+      DEMO MODE — enter anything below. This screen doesn't check credentials; it drops you straight into the dashboard.
+    </div>
+
+    <form id="login-form">
+      <div class="field">
+        <label for="email">Email or dispatcher ID</label>
+        <input type="text" id="email" placeholder="you@yourcarrier.com" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="field-row">
+        <label class="check"><input type="checkbox" id="remember"> Keep me signed in</label>
+        <a href="#" class="link-sm">Forgot password?</a>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Enter Dashboard →</button>
+    </form>
+
+    <div class="login-foot">
+      New here? <a href="dashboard.html">Skip login and try a sample load</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>LoadParse — built for the dispatch desk</span>
+  <span>Extraction by Groq · llama-3.3-70b-versatile</span>
+</footer>
+
+<script>
+  document.getElementById('login-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    window.location.href = 'dashboard.html';
+  });
+</script>
+
+</body>
+</html>
