@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — LoadParse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="stripe"></div>
+<header class="topbar">
+  <a href="index.html" class="brand">
+    <span class="mark">LP</span>
+    LoadParse
+    <span class="tag">Dispatch Tools</span>
+  </a>
+  <nav class="nav-links">
+    <a href="index.html#problem">Problem</a>
+    <a href="index.html#solution">Solution</a>
+  </nav>
+  <a href="login.html" class="btn btn-ghost">Log Out</a>
+</header>
+
+<div class="dash-shell">
+  <div class="dash-top">
+    <div>
+      <h1>Load Parser</h1>
+      <p>Paste a rate confirmation. LoadParse extracts and validates it in seconds.</p>
+    </div>
+    <div class="status-pill" id="engine-status">
+      <span class="dot"></span> <span id="engine-status-text">Checking engine…</span>
+    </div>
+  </div>
+
+  <div class="dash-grid">
+    <div class="panel">
+      <div class="panel-head">
+        <h2><span class="idx">01</span> Raw Load Sheet</h2>
+        <span class="char-count" id="char-count">0 characters</span>
+      </div>
+      <textarea id="raw-input" placeholder="Paste the rate confirmation text here — straight from the PDF, email, or text message. Don't clean it up first, LoadParse handles the mess.
+
+Example:
+pu dallas tx 75201 8/24 0700-0900
+del ATL GA 30303 8/23
+rate $2150 flat trl 8842 bol req'd no lumper"></textarea>
+      <div class="panel-actions">
+        <div class="sample-links">
+          Try a sample:
+          <button type="button" data-sample="clean">Clean load</button>
+          <button type="button" data-sample="messy">Messy load</button>
+          <button type="button" data-sample="conflict">Date conflict</button>
+        </div>
+        <button class="btn btn-primary" id="parse-btn">Parse Load →</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2><span class="idx">02</span> Parsed &amp; Verified</h2>
+        <button class="btn btn-ghost" id="copy-all-btn" style="display:none; padding:7px 12px; font-size:11px;">Copy All</button>
+      </div>
+
+      <div id="output-empty" class="output-empty">
+        <div>
+          <div class="glyph">⌷⌷⌷</div>
+          <p>Parsed pickup, delivery, and rate details will land here — clean, verified, ready to copy into your TMS.</p>
+        </div>
+      </div>
+
+      <div id="output-loading" class="output-loading" style="display:none;">
+        <div class="spinner"></div>
+        <div>Routing to Groq · llama-3.3-70b-versatile…</div>
+      </div>
+
+      <div id="output-result" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>LoadParse — built for the dispatch desk</span>
+  <span>Extraction by Groq · llama-3.3-70b-versatile</span>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
