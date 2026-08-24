@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -28,7 +30,7 @@
   <div class="dash-top">
     <div>
       <h1>Load Parser</h1>
-      <p>Paste a rate confirmation. LoadParse extracts and validates it in seconds.</p>
+      <p>Paste, drop a PDF, or upload a spreadsheet. LoadParse extracts and validates any format in seconds.</p>
     </div>
     <div class="status-pill" id="engine-status">
       <span class="dot"></span> <span id="engine-status-text">Checking engine…</span>
@@ -41,7 +43,17 @@
         <h2><span class="idx">01</span> Raw Load Sheet</h2>
         <span class="char-count" id="char-count">0 characters</span>
       </div>
-      <textarea id="raw-input" placeholder="Paste the rate confirmation text here — straight from the PDF, email, or text message. Don't clean it up first, LoadParse handles the mess.
+
+      <div class="upload-zone" id="upload-zone" tabindex="0" role="button" aria-label="Upload a rate confirmation file">
+        <input type="file" id="file-input" accept=".pdf,.xlsx,.xls,.csv,.txt" hidden>
+        <div class="upload-icon">⇪</div>
+        <p class="upload-main"><b>Drop a file</b> — PDF, Excel, CSV, or .txt — or click to browse</p>
+        <p class="upload-sub">Text is pulled out automatically and dropped into the box below.</p>
+      </div>
+      <div class="upload-status" id="upload-status"></div>
+      <div class="divider-or"><span>or paste raw text below</span></div>
+
+      <textarea id="raw-input" placeholder="Paste anything: a full rate confirmation, a forwarded email, a text message from a broker, or a row copied out of a spreadsheet. Any format, any mess — don't clean it up first.
 
 Example:
 pu dallas tx 75201 8/24 0700-0900
@@ -53,6 +65,7 @@ rate $2150 flat trl 8842 bol req'd no lumper"></textarea>
           <button type="button" data-sample="clean">Clean load</button>
           <button type="button" data-sample="messy">Messy load</button>
           <button type="button" data-sample="conflict">Date conflict</button>
+          <button type="button" data-sample="multistop">Multi-stop</button>
         </div>
         <button class="btn btn-primary" id="parse-btn">Parse Load →</button>
       </div>
