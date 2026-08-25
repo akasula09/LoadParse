@@ -29,32 +29,37 @@
     <div class="clip"></div>
     <div class="login-head">
       <div class="eyebrow">Dispatch Desk Login</div>
-      <h1>Clock in.</h1>
-      <p>Log in to start parsing load sheets. This is a free demo login — no account is created or verified.</p>
+      <h1 id="mode-label">Clock in.</h1>
+      <p id="mode-sub">Log in to your LoadParse account for unlimited parsing.</p>
     </div>
 
     <div class="demo-note">
-      DEMO MODE — enter anything below. This screen doesn't check credentials; it drops you straight into the dashboard.
+      Accounts are free and get unlimited parsing. New sign-ups get a confirmation email from Supabase — click the link before logging in.
     </div>
+
+    <div class="auth-msg" id="auth-msg" style="display:none;"></div>
 
     <form id="login-form">
       <div class="field">
-        <label for="email">Email or dispatcher ID</label>
-        <input type="text" id="email" placeholder="you@yourcarrier.com" autocomplete="username">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@yourcarrier.com" autocomplete="username" required>
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+        <input type="password" id="password" placeholder="At least 6 characters" autocomplete="current-password" required>
       </div>
       <div class="field-row">
-        <label class="check"><input type="checkbox" id="remember"> Keep me signed in</label>
-        <a href="#" class="link-sm">Forgot password?</a>
+        <label class="check"><input type="checkbox" id="remember" checked> Keep me signed in</label>
+        <a href="#" class="link-sm" id="forgot-link">Forgot password?</a>
       </div>
-      <button type="submit" class="btn btn-primary btn-block">Enter Dashboard →</button>
+      <button type="submit" class="btn btn-primary btn-block" id="submit-btn">Enter Dashboard →</button>
     </form>
 
     <div class="login-foot">
-      New here? <a href="dashboard.html">Skip login and try a sample load</a>
+      <a href="#" id="toggle-mode">Need an account? Create one</a>
+    </div>
+    <div class="login-foot" style="border-top:none; padding-top:0;">
+      Or <a href="dashboard.html">continue without an account</a> — 1 free parse/day.
     </div>
   </div>
 </div>
@@ -64,12 +69,9 @@
   <span>Extraction by Groq · llama-3.3-70b-versatile</span>
 </footer>
 
-<script>
-  document.getElementById('login-form').addEventListener('submit', function(e){
-    e.preventDefault();
-    window.location.href = 'dashboard.html';
-  });
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="auth.js"></script>
+<script src="login.js"></script>
 
 </body>
 </html>
