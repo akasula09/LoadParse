@@ -33,22 +33,26 @@
       <p id="mode-sub">Log in to your LoadParse account for unlimited parsing.</p>
     </div>
 
-    <div class="demo-note">
+    <div class="demo-note" id="demo-note">
       Accounts are free and get unlimited parsing. New sign-ups get a confirmation email from Supabase — click the link before logging in.
     </div>
 
     <div class="auth-msg" id="auth-msg" style="display:none;"></div>
 
     <form id="login-form">
-      <div class="field">
+      <div class="field" id="field-email">
         <label for="email">Email</label>
-        <input type="email" id="email" placeholder="you@yourcarrier.com" autocomplete="username" required>
+        <input type="email" id="email" placeholder="you@yourcarrier.com" autocomplete="username">
       </div>
-      <div class="field">
+      <div class="field" id="field-password">
         <label for="password">Password</label>
-        <input type="password" id="password" placeholder="At least 6 characters" autocomplete="current-password" required>
+        <input type="password" id="password" placeholder="At least 6 characters" autocomplete="current-password">
       </div>
-      <div class="field-row">
+      <div class="field" id="field-new-password" style="display:none;">
+        <label for="new-password">New password</label>
+        <input type="password" id="new-password" placeholder="At least 6 characters" autocomplete="new-password">
+      </div>
+      <div class="field-row" id="field-row-remember">
         <label class="check"><input type="checkbox" id="remember" checked> Keep me signed in</label>
         <a href="#" class="link-sm" id="forgot-link">Forgot password?</a>
       </div>
@@ -58,7 +62,7 @@
     <div class="login-foot">
       <a href="#" id="toggle-mode">Need an account? Create one</a>
     </div>
-    <div class="login-foot" style="border-top:none; padding-top:0;">
+    <div class="login-foot" id="anon-foot" style="border-top:none; padding-top:0;">
       Or <a href="dashboard.html">continue without an account</a> — 1 free parse/day.
     </div>
   </div>
@@ -70,8 +74,233 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="auth.js"></script>
-<script src="login.js"></script>
+<script>
+/* ==========================================================================
+   Supabase Auth client — shared setup, formerly auth.js.
+
+   Project ref:  pquwgzwbdhwmnsjsodni
+   Key type:     publishable key (safe to expose client-side — this is the
+                 new-style Supabase key that replaces the old "anon" key,
+                 NOT the secret/service_role key).
+   ========================================================================== */
+
+const SUPABASE_URL = 'https://pquwgzwbdhwmnsjsodni.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_WciVAE3r35hMRLtZ_rjn5w_3D7lpYFY';
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    // Reads the access/refresh token Supabase appends to the URL after an
+    // email-confirmation, magic-link, or password-recovery redirect,
+    // establishes the session from it, then strips it from the address bar.
+    // Every one of those flows now redirects back to THIS page (login.html)
+    // — see emailRedirectTo / redirectTo below — so all of that handling
+    // lives in one place instead of being split across pages.
+    detectSessionInUrl: true,
+  },
+});
+
+async function getCurrentSession(){
+  const { data, error } = await sb.auth.getSession();
+  if(error){ console.error('[auth] getSession error', error); return null; }
+  return data.session || null;
+}
+
+async function signUpWithEmail(email, password){
+  return sb.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.origin + '/login.html' },
+  });
+}
+
+async function signInWithEmail(email, password){
+  return sb.auth.signInWithPassword({ email, password });
+}
+
+async function sendPasswordReset(email){
+  return sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/login.html',
+  });
+}
+
+async function updateCurrentUserPassword(newPassword){
+  return sb.auth.updateUser({ password: newPassword });
+}
+
+/* ==========================================================================
+   login.js — sign-in / sign-up / forgot-password / reset-password behavior
+   for login.html. Formerly a separate login.js file.
+   ========================================================================== */
+
+(function(){
+  const msgEl = document.getElementById('auth-msg');
+  const demoNote = document.getElementById('demo-note');
+  const form = document.getElementById('login-form');
+  const emailEl = document.getElementById('email');
+  const passwordEl = document.getElementById('password');
+  const newPasswordEl = document.getElementById('new-password');
+  const submitBtn = document.getElementById('submit-btn');
+  const toggleLink = document.getElementById('toggle-mode');
+  const modeLabel = document.getElementById('mode-label');
+  const modeSub = document.getElementById('mode-sub');
+  const forgotLink = document.getElementById('forgot-link');
+  const fieldEmail = document.getElementById('field-email');
+  const fieldPassword = document.getElementById('field-password');
+  const fieldNewPassword = document.getElementById('field-new-password');
+  const fieldRowRemember = document.getElementById('field-row-remember');
+  const anonFoot = document.getElementById('anon-foot');
+
+  // 'signin' | 'signup' | 'forgot' | 'reset'
+  let mode = 'signin';
+  let hashHadError = false;
+
+  function showMsg(text, kind){
+    msgEl.textContent = text;
+    msgEl.className = 'auth-msg' + (kind ? ' ' + kind : '');
+    msgEl.style.display = text ? 'block' : 'none';
+  }
+
+  function enterMode(next){
+    mode = next;
+    showMsg('', '');
+
+    fieldEmail.style.display = (mode === 'reset') ? 'none' : 'block';
+    fieldPassword.style.display = (mode === 'signin' || mode === 'signup') ? 'block' : 'none';
+    fieldNewPassword.style.display = (mode === 'reset') ? 'block' : 'none';
+    fieldRowRemember.style.display = (mode === 'signin') ? 'flex' : 'none';
+    demoNote.style.display = (mode === 'signin' || mode === 'signup') ? 'block' : 'none';
+    anonFoot.style.display = (mode === 'signin') ? 'block' : 'none';
+
+    if(mode === 'signin'){
+      modeLabel.textContent = 'Clock in.';
+      modeSub.textContent = 'Log in to your LoadParse account for unlimited parsing.';
+      submitBtn.textContent = 'Enter Dashboard →';
+      toggleLink.textContent = 'Need an account? Create one';
+      toggleLink.style.display = 'inline';
+    } else if(mode === 'signup'){
+      modeLabel.textContent = 'Create your account.';
+      modeSub.textContent = "Free to sign up. We'll email you a confirmation link — click it before logging in.";
+      submitBtn.textContent = 'Create Account →';
+      toggleLink.textContent = 'Already have an account? Log in';
+      toggleLink.style.display = 'inline';
+    } else if(mode === 'forgot'){
+      modeLabel.textContent = 'Reset your password.';
+      modeSub.textContent = "Enter your email and we'll send you a link to set a new password.";
+      submitBtn.textContent = 'Send Reset Link →';
+      toggleLink.textContent = '← Back to log in';
+      toggleLink.style.display = 'inline';
+    } else if(mode === 'reset'){
+      modeLabel.textContent = 'Set a new password.';
+      modeSub.textContent = 'Choose a new password for your account.';
+      submitBtn.textContent = 'Update Password →';
+      toggleLink.style.display = 'none';
+    }
+  }
+
+  // Surface a Supabase error redirected back in the URL hash — e.g. an
+  // expired or already-used email confirmation / recovery link:
+  // #error=access_denied&error_code=otp_expired&error_description=...
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  if(hashParams.get('error')){
+    hashHadError = true;
+    const code = (hashParams.get('error_code') || '').toLowerCase();
+    const description = (hashParams.get('error_description') || '').toLowerCase();
+    if(code.includes('expired') || description.includes('expired')){
+      showMsg('The link you used is expired. Please try again.', 'err');
+    } else {
+      showMsg(decodeURIComponent(hashParams.get('error_description') || '').replace(/\+/g, ' ') || "That link isn't valid. Please try again.", 'err');
+    }
+    // Clean the error out of the address bar so refreshing doesn't re-show it.
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+
+  enterMode('signin');
+
+  // Handles three cases, all landing on this same page:
+  //  - PASSWORD_RECOVERY: a valid recovery link was just clicked -> let the
+  //    user set a new password instead of dropping them into the dashboard.
+  //  - SIGNED_IN / INITIAL_SESSION with a session and no error in the URL:
+  //    either a normal returning session, or a valid signup-confirmation
+  //    link was just clicked -> go straight to the dashboard.
+  sb.auth.onAuthStateChange((event, session) => {
+    if(event === 'PASSWORD_RECOVERY'){
+      enterMode('reset');
+      return;
+    }
+    if((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && !hashHadError && mode !== 'reset'){
+      window.location.href = 'dashboard.html';
+    }
+  });
+
+  toggleLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    if(mode === 'forgot'){ enterMode('signin'); return; }
+    enterMode(mode === 'signup' ? 'signin' : 'signup');
+  });
+
+  forgotLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    enterMode('forgot');
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    submitBtn.disabled = true;
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Please wait…';
+    showMsg('', '');
+
+    try{
+      if(mode === 'reset'){
+        const newPassword = newPasswordEl.value;
+        if(!newPassword || newPassword.length < 6){ showMsg('Password must be at least 6 characters.', 'err'); return; }
+        const { error } = await updateCurrentUserPassword(newPassword);
+        if(error){ showMsg(error.message, 'err'); return; }
+        showMsg('Password updated. Taking you to the dashboard…', 'ok');
+        setTimeout(() => { window.location.href = 'dashboard.html'; }, 1200);
+        return;
+      }
+
+      if(mode === 'forgot'){
+        const email = emailEl.value.trim();
+        if(!email){ showMsg('Enter your email.', 'err'); return; }
+        const { error } = await sendPasswordReset(email);
+        if(error){ showMsg(error.message, 'err'); return; }
+        showMsg("If an account exists for that email, we've sent a reset link — check your inbox.", 'ok');
+        return;
+      }
+
+      const email = emailEl.value.trim();
+      const password = passwordEl.value;
+      if(!email || !password){ showMsg('Enter an email and password.', 'err'); return; }
+      if(password.length < 6){ showMsg('Password must be at least 6 characters.', 'err'); return; }
+
+      if(mode === 'signup'){
+        const { data, error } = await signUpWithEmail(email, password);
+        if(error){ showMsg(error.message, 'err'); return; }
+        if(data.session){
+          // Email confirmation is disabled on this project — session is live immediately.
+          window.location.href = 'dashboard.html';
+        } else {
+          showMsg('Account created — check your email to confirm it, then log in.', 'ok');
+        }
+      } else {
+        const { data, error } = await signInWithEmail(email, password);
+        if(error){ showMsg(error.message, 'err'); return; }
+        window.location.href = 'dashboard.html';
+      }
+    } catch(err){
+      showMsg('Something went wrong: ' + err.message, 'err');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
+  });
+})();
+</script>
 
 </body>
 </html>
