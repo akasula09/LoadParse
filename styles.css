@@ -432,6 +432,17 @@ footer{
   line-height:1.5;
 }
 
+.auth-msg{
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 11px 13px;
+  border-radius: var(--radius);
+  margin-bottom: 18px;
+  line-height: 1.55;
+}
+.auth-msg.err{ background: rgba(200,30,30,0.08); border: 1px solid var(--red); color: var(--red-dark); }
+.auth-msg.ok{ background: rgba(11,93,59,0.08); border: 1px solid var(--green); color: var(--green); }
+
 /* -------------------------------------------------------------------------
    DASHBOARD
    ------------------------------------------------------------------------- */
