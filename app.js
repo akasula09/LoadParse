@@ -34,10 +34,73 @@ const els = {
   uploadZone: document.getElementById('upload-zone'),
   fileInput: document.getElementById('file-input'),
   uploadStatus: document.getElementById('upload-status'),
+  outputLimit: document.getElementById('output-limit'),
+  authStatusPill: document.getElementById('auth-status'),
+  authStatusText: document.getElementById('auth-status-text'),
+  topbarAuthBtn: document.getElementById('topbar-auth-btn'),
 };
 
 let engineMode = 'checking'; // 'live' | 'demo'
 let lastParsed = null;
+let currentSession = null;
+
+/* =============================================================================
+   ACCOUNT STATE (Supabase Auth) + ANONYMOUS DAILY LIMIT
+   Logged-in users: unlimited parsing.
+   Anonymous users: 1 parse per rolling calendar day, tracked in localStorage
+   (a soft, client-side nudge toward creating an account — not a hard quota;
+   see the README production checklist for real abuse prevention).
+   ============================================================================= */
+
+const ANON_LIMIT_KEY = 'loadparse_anon_usage';
+
+function getAnonUsageToday(){
+  try{
+    const raw = localStorage.getItem(ANON_LIMIT_KEY);
+    if(!raw) return 0;
+    const data = JSON.parse(raw);
+    const today = new Date().toISOString().slice(0, 10);
+    return data.date === today ? (data.count || 0) : 0;
+  } catch(e){ return 0; }
+}
+
+function recordAnonUsage(){
+  const today = new Date().toISOString().slice(0, 10);
+  try{
+    localStorage.setItem(ANON_LIMIT_KEY, JSON.stringify({ date: today, count: getAnonUsageToday() + 1 }));
+  } catch(e){ /* private browsing or storage disabled — fail open */ }
+}
+
+function updateAuthUI(session){
+  currentSession = session;
+  if(session){
+    els.authStatusPill.classList.remove('offline');
+    els.authStatusText.textContent = `Signed in as ${session.user.email}`;
+    els.topbarAuthBtn.textContent = 'Log Out';
+    els.topbarAuthBtn.href = '#';
+  } else {
+    els.authStatusPill.classList.add('offline');
+    const used = getAnonUsageToday();
+    els.authStatusText.textContent = used >= 1 ? 'Free tier — daily parse used' : 'Free tier — 1 parse/day';
+    els.topbarAuthBtn.textContent = 'Log In';
+    els.topbarAuthBtn.href = 'login.html';
+  }
+}
+
+els.topbarAuthBtn.addEventListener('click', async (e) => {
+  if(currentSession){
+    e.preventDefault();
+    await signOut();
+    window.location.href = 'index.html';
+  }
+  // else: default navigation to login.html
+});
+
+(async function initAuth(){
+  const session = await getCurrentSession(); // also resolves any token in the URL (email confirm redirect)
+  updateAuthUI(session);
+  onAuthChange((session) => updateAuthUI(session));
+})();
 
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -234,6 +297,16 @@ els.parseBtn.addEventListener('click', async () => {
     return;
   }
 
+  if(!currentSession && getAnonUsageToday() >= 1){
+    els.empty.style.display = 'none';
+    els.result.style.display = 'none';
+    els.loading.style.display = 'none';
+    els.outputLimit.style.display = 'flex';
+    showToast('Daily free parse used — log in for unlimited parsing');
+    return;
+  }
+
+  els.outputLimit.style.display = 'none';
   els.empty.style.display = 'none';
   els.result.style.display = 'none';
   els.loading.style.display = 'flex';
@@ -258,6 +331,11 @@ els.parseBtn.addEventListener('click', async () => {
     data = await demoParse(text);
     engineMode = 'demo';
     renderEngineStatus();
+  }
+
+  if(!currentSession){
+    recordAnonUsage();
+    updateAuthUI(currentSession);
   }
 
   lastParsed = data;
